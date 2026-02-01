@@ -661,76 +661,72 @@ def main():
         
         **One Flange (OF)** - force on ONE flange only:
         ```
-        Example: Sheet on support (typical case)
+        Single sheet on support:
         
-        ____/````\____/````\____
-            |    |    |    |
-            |    |    |    |
-        ____\____/____\____/____
-                 ^
-                 |
-            Force on BOTTOM flange only
-            (support reaction)
+            /````\\
+           /      \\
+          /        \\
+         +---------+  <- bottom flange
+              ^
+              |
+           SUPPORT (force on bottom only)
         ```
-        Web bends and transfers load to corners.
+        Typical case: sheet resting on purlin.
         
         ---
         
         **Two Flanges (TF)** - forces on BOTH flanges:
         ```
-        Example: Two sheets overlapping at support
+        Two sheets overlapping at support:
         
-        Upper sheet:  ____/````\____
-                          |    |
-                          v    v  (weight of upper sheet)
-        Lower sheet:  ____/````\____
-                          |    |
-                      ____\____/____
-                           ^
-                           |
-                      (support reaction)
-        
-        Lower sheet web is SQUEEZED:
-        - Top flange pushed DOWN by upper sheet
-        - Bottom flange pushed UP by support
+        Sheet 2:    /````\\
+                   /      \\
+                  v   v   v   <- presses DOWN on Sheet 1
+        Sheet 1:    /````\\      (top flange loaded)
+                   /      \\
+                  +---------+
+                       ^
+                       |
+                    SUPPORT    (bottom flange loaded)
         ```
-        Web compressed between two forces.
+        Web of Sheet 1 is squeezed from both sides.
         
         ---
         
         ### Interior (I) vs End (E)
         
-        Refers to **position relative to sheet edge**:
+        **End (E):** Support near sheet edge
+        ```
+        Sheet edge
+             |
+             v
+        [====|  <- sheet ends here
+             ^
+          SUPPORT at end
+        ```
         
-        **End (E):** Load near sheet termination
+        **Interior (I):** Support far from edges
         ```
-        |####[===SHEET===]
-        ^
-        Load at END (edge of sheet nearby)
-        ```
-        
-        **Interior (I):** Load far from sheet edges  
-        ```
-        [===SHEET====|====SHEET===]
-                     ^
-              Load in INTERIOR (sheet continues both sides)
+        [==========|==========]
+                   ^
+            SUPPORT in middle
+            (sheet continues both ways)
         ```
         
         ---
         
-        ### CONSERVATIVE APPROACH
+        ### RECOMMENDATION
         
-        | Case | Safe choice |
-        |------|-------------|
+        | Case | Choice |
+        |------|--------|
         | Single sheet on support | **OF** |
-        | Overlap joint | **TF** |
-        | End support | **E** (End) |
-        | Middle support | **I** (Interior) |
-        | Unsure? | **EOF** = safest |
+        | Sheets overlapping | **TF** |
+        | End support | **E** |
+        | Middle support | **I** |
         
-        **Most common: EOF or IOF**
+        **Typical: EOF or IOF**
         
-        TF is rare - only for overlaps or clamped joints.
+        **Safest: EOF** (lowest resistance)
         """)
     
     st.sidebar.markdown("""
