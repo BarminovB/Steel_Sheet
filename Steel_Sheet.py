@@ -1006,7 +1006,7 @@ if calc_btn:
     st.markdown("---")
     st.subheader("📈 Diagrams")
     
-    tab1, tab2 = st.tabs(["Forces (ULS)", "Deflection (SLS)"])
+    tab1, tab2 = st.tabs(["Forces (ULS)", "Deflection (SLS criteria)"])
     
     with tab1:
         fig = plot_internal_forces(x_uls, M_uls, V_uls, spans, point_loads)
