@@ -355,7 +355,7 @@ def calculate_resistances(props, fy, gamma_m):
     return {"M_Rd_pos": M_Rd_pos, "M_Rd_neg": M_Rd_neg, "V_Rd": V_Rd,
             "W_pos": props.get("W_pos", 20), "W_neg": props.get("W_neg", 18)}
 
-def check_web_crippling(F_Ed, props, fy, gamma_m, s_s, category):
+def check_web_crippling(F_Ed, props, fy, gamma_m, s_s, category, num_webs_eff=None):
     """
     EN 1993-1-3, 6.1.7.3 - Web crippling for sheeting
     R_w,Rd = alpha * t^2 * sqrt(f_yb * E) * k1 * k2 * k3 / gamma_M1
@@ -367,12 +367,20 @@ def check_web_crippling(F_Ed, props, fy, gamma_m, s_s, category):
     
     Category 1: End support (c <= 1.5*h_w), alpha=0.075, l_a=10mm
     Category 2: Internal support, alpha=0.15, l_a=s_s
+    
+    num_webs_eff: Number of webs effectively resisting the load
+        - For support reactions (UDL): all webs
+        - For true point loads: 1-2 webs only
     """
     t = props["t"]
     r = props["r"]
     phi = props["phi"]
     E = props["E"]
     num_webs = props.get("num_webs", 2)
+    
+    # Use effective webs if specified, otherwise all webs
+    if num_webs_eff is None:
+        num_webs_eff = num_webs
     
     if category == 1:
         alpha = 0.075
@@ -387,7 +395,7 @@ def check_web_crippling(F_Ed, props, fy, gamma_m, s_s, category):
     sqrt_fy_E = np.sqrt(fy * E)
     
     R_w_Rd_single = alpha * t**2 * sqrt_fy_E * k1 * k2 * k3 / gamma_m  # N per web
-    R_w_Rd = R_w_Rd_single * num_webs / 1000  # kN total
+    R_w_Rd = R_w_Rd_single * num_webs_eff / 1000  # kN total
     
     utilization = F_Ed / R_w_Rd if R_w_Rd > 0 else float("inf")
     
@@ -406,6 +414,7 @@ def check_web_crippling(F_Ed, props, fy, gamma_m, s_s, category):
         "r": r,
         "phi": phi,
         "num_webs": num_webs,
+        "num_webs_eff": num_webs_eff,
         "category": category
     }
 
@@ -650,6 +659,18 @@ def main():
     wc_category = st.sidebar.radio("Category", [1, 2], index=1,
         format_func=lambda x: f"Cat.{x}: {'End (alpha=0.075)' if x==1 else 'Internal (alpha=0.15)'}")
     
+    st.sidebar.markdown("**Load distribution:**")
+    st.sidebar.markdown("""
+    **All webs:** Support reaction from UDL - load distributed across all webs within bearing width.
+    
+    **1 web only:** True point load (equipment leg, hanger) - acts on single web directly beneath.
+    
+    **2 webs:** Point load with small spread - affects 2 adjacent webs.
+    """)
+    num_webs_effective = st.sidebar.radio("Effective webs for point loads", 
+        ["All webs", "1 web", "2 webs"], index=0,
+        help="How many webs resist the point load")
+    
     calc_btn = st.sidebar.button("CALCULATE", type="primary", use_container_width=True)
     
     # === MAIN CONTENT ===
@@ -780,13 +801,27 @@ def main():
             if point_loads:
                 st.subheader("Local Effects - Web Crippling (6.1.7.3)")
                 
+                # Determine effective number of webs
+                if num_webs_effective == "All webs":
+                    n_webs_eff = props.get("num_webs", 2)
+                elif num_webs_effective == "1 web":
+                    n_webs_eff = 1
+                else:
+                    n_webs_eff = 2
+                
                 for i, pl in enumerate(point_loads):
-                    wc = check_web_crippling(pl["magnitude_uls"], props, fy, gamma_m, s_s, wc_category)
+                    wc = check_web_crippling(pl["magnitude_uls"], props, fy, gamma_m, s_s, wc_category, n_webs_eff)
                     comb = check_combined_bending_web_crippling(M_Ed_pos, pl["magnitude_uls"], M_Rd_pos, wc["R_w_Rd"])
                     
                     status_color = "green" if wc["status"]=="OK" and comb["status"]=="OK" else "red"
                     
                     st.markdown(f"### Point Load P{i+1} = {pl['magnitude_uls']:.2f} kN")
+                    
+                    # Warning about load distribution
+                    if n_webs_eff < props.get("num_webs", 2):
+                        st.warning(f"Using {n_webs_eff} effective web(s) - true point load assumption")
+                    else:
+                        st.info(f"Using all {n_webs_eff} webs - load distributed (support reaction assumption)")
                     
                     st.markdown(f"""
                     **Web Crippling Resistance (EN 1993-1-3, 6.1.7.3, Formula 6.18):**
@@ -805,7 +840,8 @@ def main():
                     | E | {props['E']} MPa | Elastic modulus |
                     | alpha | {wc['alpha']} | Category coefficient |
                     | l_a | {wc['l_a']} mm | Effective bearing length |
-                    | n_webs | {wc['num_webs']} | Number of webs |
+                    | n_webs (total) | {wc['num_webs']} | Total webs in profile |
+                    | **n_webs (effective)** | **{wc['num_webs_eff']}** | **Webs resisting load** |
                     | gamma_M1 | {gamma_m} | Partial factor |
                     
                     **Intermediate calculations:**
@@ -818,8 +854,8 @@ def main():
                     R_w,Rd,single = {wc['alpha']} * {wc['t']}^2 * {wc['sqrt_fy_E']:.2f} * {wc['k1']:.4f} * {wc['k2']:.4f} * {wc['k3']:.4f} / {gamma_m}
                     R_w,Rd,single = **{wc['R_w_Rd_single']*1000:.1f} N = {wc['R_w_Rd_single']:.3f} kN**
                     
-                    **Total resistance ({wc['num_webs']} webs):**
-                    R_w,Rd = {wc['R_w_Rd_single']:.3f} * {wc['num_webs']} = **{wc['R_w_Rd']:.2f} kN**
+                    **Total resistance ({wc['num_webs_eff']} effective webs):**
+                    R_w,Rd = {wc['R_w_Rd_single']:.3f} * {wc['num_webs_eff']} = **{wc['R_w_Rd']:.2f} kN**
                     
                     **Utilization:**
                     F_Ed / R_w,Rd = {pl['magnitude_uls']:.2f} / {wc['R_w_Rd']:.2f} = **{wc['utilization']*100:.1f}%** --> **{wc['status']}**
