@@ -2,10 +2,6 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from profiles import get_profile_properties
-from calculations import calculate_efforts, check_uls_sls
-from local_effects import check_local_effects
-from utils import plot_efforts, plot_deflections, generate_results_table
 
 # Streamlit app title
 st.title("Profiled Steel Sheet Calculator (Ruukki/UK Suppliers)")
@@ -76,4 +72,5 @@ if st.sidebar.button("Calculate"):
     st.pyplot(fig_m_v)
     
     fig_defl = plot_deflections(x, defl, point_loads)
+
     st.pyplot(fig_defl)
