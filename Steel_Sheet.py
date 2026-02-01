@@ -2,7 +2,7 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from scipy.integrate import cumtrapz
+from scipy.integrate import cumulative_trapezoid
 from scipy.optimize import fsolve
 
 # Profiles module functions
@@ -66,13 +66,13 @@ def calculate_efforts(span, udl, point_loads, E, I):
     for pl in point_loads:
         V[x > pl['position']] -= pl['magnitude']
     # Moments M: integrate V
-    M = cumtrapz(V, x, initial=0)
+    M = cumulative_trapezoid(V, x, initial=0)
     # Deflections: double integrate M / (E*I)
     I_m4 = I * 1e-8  # cm4/m to m4/m
     E_pa = E * 1e6  # MPa to Pa
     EI = E_pa * I_m4
-    theta = cumtrapz(M * 1000 / EI, x, initial=0)  # M kNm/m to Nm/m
-    defl = cumtrapz(theta, x, initial=0)  # m
+    theta = cumulative_trapezoid(M * 1000 / EI, x, initial=0)  # M kNm/m to Nm/m
+    defl = cumulative_trapezoid(theta, x, initial=0)  # m
     defl *= 1000  # to mm
     return M, V, defl
 
