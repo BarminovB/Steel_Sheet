@@ -645,11 +645,93 @@ def main():
     edge_dist = st.sidebar.number_input("Edge distance c [mm]", 0.0, 1000.0, 50.0,
         help="Distance from sheet edge to support edge")
     
+    st.sidebar.markdown("""
+    **Load type (Table 6.7):**
+    """)
+    
     load_type = st.sidebar.selectbox("Load type", ["IOF", "EOF", "ITF", "ETF"],
         format_func=lambda x: {"IOF": "IOF - Interior One Flange", 
                                "EOF": "EOF - End One Flange",
                                "ITF": "ITF - Interior Two Flanges",
                                "ETF": "ETF - End Two Flanges"}[x])
+    
+    with st.sidebar.expander("Load types explained"):
+        st.markdown("""
+        ### One Flange (OF) vs Two Flanges (TF)
+        
+        **One Flange (OF)** - force on ONE flange only:
+        ```
+        Example: Sheet on support (typical case)
+        
+        ____/````\____/````\____
+            |    |    |    |
+            |    |    |    |
+        ____\____/____\____/____
+                 ^
+                 |
+            Force on BOTTOM flange only
+            (support reaction)
+        ```
+        Web bends and transfers load to corners.
+        
+        ---
+        
+        **Two Flanges (TF)** - forces on BOTH flanges:
+        ```
+        Example: Two sheets overlapping at support
+        
+        Upper sheet:  ____/````\____
+                          |    |
+                          v    v  (weight of upper sheet)
+        Lower sheet:  ____/````\____
+                          |    |
+                      ____\____/____
+                           ^
+                           |
+                      (support reaction)
+        
+        Lower sheet web is SQUEEZED:
+        - Top flange pushed DOWN by upper sheet
+        - Bottom flange pushed UP by support
+        ```
+        Web compressed between two forces.
+        
+        ---
+        
+        ### Interior (I) vs End (E)
+        
+        Refers to **position relative to sheet edge**:
+        
+        **End (E):** Load near sheet termination
+        ```
+        |####[===SHEET===]
+        ^
+        Load at END (edge of sheet nearby)
+        ```
+        
+        **Interior (I):** Load far from sheet edges  
+        ```
+        [===SHEET====|====SHEET===]
+                     ^
+              Load in INTERIOR (sheet continues both sides)
+        ```
+        
+        ---
+        
+        ### CONSERVATIVE APPROACH
+        
+        | Case | Safe choice |
+        |------|-------------|
+        | Single sheet on support | **OF** |
+        | Overlap joint | **TF** |
+        | End support | **E** (End) |
+        | Middle support | **I** (Interior) |
+        | Unsure? | **EOF** = safest |
+        
+        **Most common: EOF or IOF**
+        
+        TF is rare - only for overlaps or clamped joints.
+        """)
     
     st.sidebar.markdown("""
     **Effective webs:**
