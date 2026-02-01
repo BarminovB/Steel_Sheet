@@ -1,6 +1,6 @@
 """
-Profiled Steel Sheet Calculator v3.2
-EN 1993-1-3 compliant
+Profiled Steel Sheet Calculator v3.3
+EN 1993-1-3 compliant with detailed calculation output
 """
 import streamlit as st
 import numpy as np
@@ -8,93 +8,105 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.integrate import cumulative_trapezoid
 from scipy.linalg import solve
-from typing import List, Dict, Tuple
 import copy
 
+# ============================================================================
+# PROFILE DATABASE
+# ============================================================================
+
 def get_profile_database():
+    """Full Ruukki profile database. Units: mm, cm4/m, cm3/m, mm2/m"""
     db = {}
+    
+    # T45-30L-905
     t45_base = {"type": "T45-30L-905", "h": 45, "pitch": 151, "b_eff": 905,
         "h_w": 40, "phi": 75, "r": 3, "num_webs": 6, "b_top": 50, "b_bottom": 44}
     t45_data = {
-        0.6: {"I_pos": 26.1, "I_neg": 23.9, "W_pos": 11.6, "W_neg": 10.6, "A_eff": 773, "weight": 6.93},
-        0.7: {"I_pos": 30.0, "I_neg": 27.5, "W_pos": 13.3, "W_neg": 12.2, "A_eff": 902, "weight": 8.09},
-        0.8: {"I_pos": 33.7, "I_neg": 30.9, "W_pos": 15.0, "W_neg": 13.7, "A_eff": 1031, "weight": 9.24},
-        0.9: {"I_pos": 37.3, "I_neg": 34.2, "W_pos": 16.6, "W_neg": 15.2, "A_eff": 1160, "weight": 10.39},
-        1.0: {"I_pos": 40.7, "I_neg": 37.3, "W_pos": 18.1, "W_neg": 16.6, "A_eff": 1289, "weight": 11.54},
+        0.6: {"I_pos": 26.1, "I_neg": 23.9, "W_pos": 11.6, "W_neg": 10.6, "A_eff": 773},
+        0.7: {"I_pos": 30.0, "I_neg": 27.5, "W_pos": 13.3, "W_neg": 12.2, "A_eff": 902},
+        0.8: {"I_pos": 33.7, "I_neg": 30.9, "W_pos": 15.0, "W_neg": 13.7, "A_eff": 1031},
+        0.9: {"I_pos": 37.3, "I_neg": 34.2, "W_pos": 16.6, "W_neg": 15.2, "A_eff": 1160},
+        1.0: {"I_pos": 40.7, "I_neg": 37.3, "W_pos": 18.1, "W_neg": 16.6, "A_eff": 1289},
     }
     for t, props in t45_data.items():
         db[f"T45-30L-905-{t}"] = {**t45_base, "t": t, "E": 210000, **props}
     
+    # T55-53L-976
     t55_base = {"type": "T55-53L-976", "h": 55, "pitch": 163, "b_eff": 976,
         "h_w": 50, "phi": 72, "r": 4, "num_webs": 6, "b_top": 53, "b_bottom": 48}
     t55_data = {
-        0.7: {"I_pos": 50.0, "I_neg": 45.0, "W_pos": 18.2, "W_neg": 16.4, "A_eff": 950, "weight": 8.50},
-        0.8: {"I_pos": 56.5, "I_neg": 50.9, "W_pos": 20.5, "W_neg": 18.5, "A_eff": 1086, "weight": 9.71},
-        0.9: {"I_pos": 62.8, "I_neg": 56.5, "W_pos": 22.8, "W_neg": 20.5, "A_eff": 1221, "weight": 10.92},
-        1.0: {"I_pos": 68.8, "I_neg": 61.9, "W_pos": 25.0, "W_neg": 22.5, "A_eff": 1357, "weight": 12.14},
+        0.7: {"I_pos": 50.0, "I_neg": 45.0, "W_pos": 18.2, "W_neg": 16.4, "A_eff": 950},
+        0.8: {"I_pos": 56.5, "I_neg": 50.9, "W_pos": 20.5, "W_neg": 18.5, "A_eff": 1086},
+        0.9: {"I_pos": 62.8, "I_neg": 56.5, "W_pos": 22.8, "W_neg": 20.5, "A_eff": 1221},
+        1.0: {"I_pos": 68.8, "I_neg": 61.9, "W_pos": 25.0, "W_neg": 22.5, "A_eff": 1357},
     }
     for t, props in t55_data.items():
         db[f"T55-53L-976-{t}"] = {**t55_base, "t": t, "E": 210000, **props}
     
+    # T60-53L-915
     t60_base = {"type": "T60-53L-915", "h": 60, "pitch": 183, "b_eff": 915,
         "h_w": 55, "phi": 70, "r": 4, "num_webs": 5, "b_top": 53, "b_bottom": 50}
     t60_data = {
-        0.7: {"I_pos": 65.0, "I_neg": 58.0, "W_pos": 21.7, "W_neg": 19.3, "A_eff": 1050, "weight": 9.10},
-        0.8: {"I_pos": 73.5, "I_neg": 65.6, "W_pos": 24.5, "W_neg": 21.9, "A_eff": 1200, "weight": 10.40},
-        0.9: {"I_pos": 81.8, "I_neg": 73.0, "W_pos": 27.3, "W_neg": 24.3, "A_eff": 1350, "weight": 11.70},
-        1.0: {"I_pos": 89.8, "I_neg": 80.2, "W_pos": 29.9, "W_neg": 26.7, "A_eff": 1500, "weight": 13.00},
+        0.7: {"I_pos": 65.0, "I_neg": 58.0, "W_pos": 21.7, "W_neg": 19.3, "A_eff": 1050},
+        0.8: {"I_pos": 73.5, "I_neg": 65.6, "W_pos": 24.5, "W_neg": 21.9, "A_eff": 1200},
+        0.9: {"I_pos": 81.8, "I_neg": 73.0, "W_pos": 27.3, "W_neg": 24.3, "A_eff": 1350},
+        1.0: {"I_pos": 89.8, "I_neg": 80.2, "W_pos": 29.9, "W_neg": 26.7, "A_eff": 1500},
     }
     for t, props in t60_data.items():
         db[f"T60-53L-915-{t}"] = {**t60_base, "t": t, "E": 210000, **props}
     
+    # T70-57L-1058
     t70_base = {"type": "T70-57L-1058", "h": 70, "pitch": 212, "b_eff": 1058,
         "h_w": 63, "phi": 70, "r": 4, "num_webs": 5, "b_top": 57, "b_bottom": 55}
     t70_data = {
-        0.7: {"I_pos": 95.0, "I_neg": 85.0, "W_pos": 27.1, "W_neg": 24.3, "A_eff": 1100, "weight": 9.00},
-        0.8: {"I_pos": 108.0, "I_neg": 97.0, "W_pos": 30.9, "W_neg": 27.7, "A_eff": 1257, "weight": 10.28},
-        0.9: {"I_pos": 120.5, "I_neg": 108.0, "W_pos": 34.4, "W_neg": 30.9, "A_eff": 1414, "weight": 11.57},
-        1.0: {"I_pos": 132.5, "I_neg": 119.0, "W_pos": 37.9, "W_neg": 34.0, "A_eff": 1571, "weight": 12.86},
-        1.1: {"I_pos": 144.0, "I_neg": 129.0, "W_pos": 41.1, "W_neg": 36.9, "A_eff": 1729, "weight": 14.14},
-        1.25: {"I_pos": 161.0, "I_neg": 145.0, "W_pos": 46.0, "W_neg": 41.4, "A_eff": 1964, "weight": 16.07},
+        0.7: {"I_pos": 95.0, "I_neg": 85.0, "W_pos": 27.1, "W_neg": 24.3, "A_eff": 1100},
+        0.8: {"I_pos": 108.0, "I_neg": 97.0, "W_pos": 30.9, "W_neg": 27.7, "A_eff": 1257},
+        0.9: {"I_pos": 120.5, "I_neg": 108.0, "W_pos": 34.4, "W_neg": 30.9, "A_eff": 1414},
+        1.0: {"I_pos": 132.5, "I_neg": 119.0, "W_pos": 37.9, "W_neg": 34.0, "A_eff": 1571},
+        1.1: {"I_pos": 144.0, "I_neg": 129.0, "W_pos": 41.1, "W_neg": 36.9, "A_eff": 1729},
+        1.25: {"I_pos": 161.0, "I_neg": 145.0, "W_pos": 46.0, "W_neg": 41.4, "A_eff": 1964},
     }
     for t, props in t70_data.items():
         db[f"T70-57L-1058-{t}"] = {**t70_base, "t": t, "E": 210000, **props}
     
+    # T85-40L-1120
     t85_base = {"type": "T85-40L-1120", "h": 85, "pitch": 224, "b_eff": 1120,
         "h_w": 78, "phi": 72, "r": 5, "num_webs": 5, "b_top": 40, "b_bottom": 80}
     t85_data = {
-        0.7: {"I_pos": 140.0, "I_neg": 125.0, "W_pos": 32.9, "W_neg": 29.4, "A_eff": 1050, "weight": 8.76},
-        0.8: {"I_pos": 158.0, "I_neg": 141.0, "W_pos": 37.2, "W_neg": 33.2, "A_eff": 1200, "weight": 10.01},
-        0.9: {"I_pos": 175.0, "I_neg": 156.0, "W_pos": 41.2, "W_neg": 36.7, "A_eff": 1350, "weight": 11.26},
-        1.0: {"I_pos": 192.0, "I_neg": 171.0, "W_pos": 45.2, "W_neg": 40.2, "A_eff": 1500, "weight": 12.51},
-        1.1: {"I_pos": 208.0, "I_neg": 185.0, "W_pos": 48.9, "W_neg": 43.5, "A_eff": 1650, "weight": 13.76},
-        1.25: {"I_pos": 232.0, "I_neg": 207.0, "W_pos": 54.6, "W_neg": 48.7, "A_eff": 1875, "weight": 15.64},
+        0.7: {"I_pos": 140.0, "I_neg": 125.0, "W_pos": 32.9, "W_neg": 29.4, "A_eff": 1050},
+        0.8: {"I_pos": 158.0, "I_neg": 141.0, "W_pos": 37.2, "W_neg": 33.2, "A_eff": 1200},
+        0.9: {"I_pos": 175.0, "I_neg": 156.0, "W_pos": 41.2, "W_neg": 36.7, "A_eff": 1350},
+        1.0: {"I_pos": 192.0, "I_neg": 171.0, "W_pos": 45.2, "W_neg": 40.2, "A_eff": 1500},
+        1.1: {"I_pos": 208.0, "I_neg": 185.0, "W_pos": 48.9, "W_neg": 43.5, "A_eff": 1650},
+        1.25: {"I_pos": 232.0, "I_neg": 207.0, "W_pos": 54.6, "W_neg": 48.7, "A_eff": 1875},
     }
     for t, props in t85_data.items():
         db[f"T85-40L-1120-{t}"] = {**t85_base, "t": t, "E": 210000, **props}
     
+    # T130M-75L-930
     t130m_base = {"type": "T130M-75L-930", "h": 130, "pitch": 233, "b_eff": 930,
         "h_w": 120, "phi": 68, "r": 5, "num_webs": 4, "b_top": 75, "b_bottom": 65}
     t130m_data = {
-        0.8: {"I_pos": 350.0, "I_neg": 310.0, "W_pos": 53.8, "W_neg": 47.7, "A_eff": 1350, "weight": 12.50},
-        0.9: {"I_pos": 390.0, "I_neg": 345.0, "W_pos": 60.0, "W_neg": 53.1, "A_eff": 1519, "weight": 14.06},
-        1.0: {"I_pos": 430.0, "I_neg": 380.0, "W_pos": 66.2, "W_neg": 58.5, "A_eff": 1688, "weight": 15.63},
-        1.1: {"I_pos": 468.0, "I_neg": 414.0, "W_pos": 72.0, "W_neg": 63.7, "A_eff": 1856, "weight": 17.19},
-        1.25: {"I_pos": 524.0, "I_neg": 463.0, "W_pos": 80.6, "W_neg": 71.2, "A_eff": 2109, "weight": 19.53},
-        1.5: {"I_pos": 616.0, "I_neg": 545.0, "W_pos": 94.8, "W_neg": 83.8, "A_eff": 2531, "weight": 23.44},
+        0.8: {"I_pos": 350.0, "I_neg": 310.0, "W_pos": 53.8, "W_neg": 47.7, "A_eff": 1350},
+        0.9: {"I_pos": 390.0, "I_neg": 345.0, "W_pos": 60.0, "W_neg": 53.1, "A_eff": 1519},
+        1.0: {"I_pos": 430.0, "I_neg": 380.0, "W_pos": 66.2, "W_neg": 58.5, "A_eff": 1688},
+        1.1: {"I_pos": 468.0, "I_neg": 414.0, "W_pos": 72.0, "W_neg": 63.7, "A_eff": 1856},
+        1.25: {"I_pos": 524.0, "I_neg": 463.0, "W_pos": 80.6, "W_neg": 71.2, "A_eff": 2109},
+        1.5: {"I_pos": 616.0, "I_neg": 545.0, "W_pos": 94.8, "W_neg": 83.8, "A_eff": 2531},
     }
     for t, props in t130m_data.items():
         db[f"T130M-75L-930-{t}"] = {**t130m_base, "t": t, "E": 210000, **props}
     
+    # T153-40L-840
     t153_base = {"type": "T153-40L-840", "h": 153, "pitch": 280, "b_eff": 840,
         "h_w": 143, "phi": 65, "r": 5, "num_webs": 3, "b_top": 40, "b_bottom": 100}
     t153_data = {
-        0.9: {"I_pos": 560.0, "I_neg": 495.0, "W_pos": 73.2, "W_neg": 64.7, "A_eff": 1575, "weight": 16.14},
-        1.0: {"I_pos": 620.0, "I_neg": 548.0, "W_pos": 81.0, "W_neg": 71.6, "A_eff": 1750, "weight": 17.93},
-        1.1: {"I_pos": 678.0, "I_neg": 600.0, "W_pos": 88.6, "W_neg": 78.4, "A_eff": 1925, "weight": 19.73},
-        1.2: {"I_pos": 735.0, "I_neg": 650.0, "W_pos": 96.1, "W_neg": 84.9, "A_eff": 2100, "weight": 21.52},
-        1.25: {"I_pos": 762.0, "I_neg": 674.0, "W_pos": 99.6, "W_neg": 88.1, "A_eff": 2188, "weight": 22.41},
-        1.5: {"I_pos": 897.0, "I_neg": 793.0, "W_pos": 117.2, "W_neg": 103.7, "A_eff": 2625, "weight": 26.90},
+        0.9: {"I_pos": 560.0, "I_neg": 495.0, "W_pos": 73.2, "W_neg": 64.7, "A_eff": 1575},
+        1.0: {"I_pos": 620.0, "I_neg": 548.0, "W_pos": 81.0, "W_neg": 71.6, "A_eff": 1750},
+        1.1: {"I_pos": 678.0, "I_neg": 600.0, "W_pos": 88.6, "W_neg": 78.4, "A_eff": 1925},
+        1.2: {"I_pos": 735.0, "I_neg": 650.0, "W_pos": 96.1, "W_neg": 84.9, "A_eff": 2100},
+        1.25: {"I_pos": 762.0, "I_neg": 674.0, "W_pos": 99.6, "W_neg": 88.1, "A_eff": 2188},
+        1.5: {"I_pos": 897.0, "I_neg": 793.0, "W_pos": 117.2, "W_neg": 103.7, "A_eff": 2625},
     }
     for t, props in t153_data.items():
         db[f"T153-40L-840-{t}"] = {**t153_base, "t": t, "E": 210000, **props}
@@ -117,6 +129,10 @@ def get_thicknesses_for_type(profile_type):
         if name.startswith(profile_type + "-"):
             thicknesses.append(props["t"])
     return sorted(thicknesses)
+
+# ============================================================================
+# VISUALIZATION
+# ============================================================================
 
 def draw_profile_cross_section(props, profile_name=""):
     fig, ax = plt.subplots(figsize=(10, 4))
@@ -161,9 +177,9 @@ def draw_profile_cross_section(props, profile_name=""):
     ax.set_xlim(-50, total_width + 30)
     ax.set_ylim(-35, h + 35)
     ax.set_aspect("equal")
-    ax.set_xlabel("Width [mm]", fontsize=10)
-    ax.set_ylabel("Height [mm]", fontsize=10)
-    ax.set_title(f"Profile: {profile_name}", fontsize=12, fontweight="bold")
+    ax.set_xlabel("Width [mm]")
+    ax.set_ylabel("Height [mm]")
+    ax.set_title(f"Profile: {profile_name}", fontweight="bold")
     ax.grid(True, alpha=0.3, linestyle="--")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -182,7 +198,7 @@ def draw_beam_diagram(spans, udl_uls, udl_sls, point_loads):
         support_positions.append(cumulative)
     for i, x_sup in enumerate(support_positions):
         triangle = plt.Polygon([[x_sup - 0.15, beam_y - 0.05], [x_sup + 0.15, beam_y - 0.05],
-                                [x_sup, beam_y - 0.30]], closed=True, facecolor="dimgray", edgecolor="black", linewidth=1.5)
+                                [x_sup, beam_y - 0.30]], closed=True, facecolor="dimgray", edgecolor="black")
         ax.add_patch(triangle)
         ax.plot([x_sup - 0.2, x_sup + 0.2], [beam_y - 0.32, beam_y - 0.32], "k-", linewidth=2)
         ax.text(x_sup, beam_y - 0.45, f"{i+1}", ha="center", fontsize=9, fontweight="bold",
@@ -195,29 +211,35 @@ def draw_beam_diagram(spans, udl_uls, udl_sls, point_loads):
         ax.plot([0, total_length], [beam_y + 0.35, beam_y + 0.35], "r-", linewidth=2)
         ax.text(total_length / 2, beam_y + 0.50, f"ULS: {udl_uls:.2f} kN/m2 | SLS: {udl_sls:.2f} kN/m2",
                 ha="center", fontsize=11, color="darkred", fontweight="bold",
-                bbox=dict(boxstyle="round,pad=0.3", facecolor="lightyellow", alpha=0.95, edgecolor="orange"))
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="lightyellow", alpha=0.95))
     for i, pl in enumerate(point_loads):
         x_pl = pl["position"]
         p_uls = pl.get("magnitude_uls", pl.get("magnitude", 0))
         p_sls = pl.get("magnitude_sls", p_uls)
         ax.annotate("", xy=(x_pl, beam_y + 0.03), xytext=(x_pl, beam_y + 0.65),
                    arrowprops=dict(arrowstyle="->", color="blue", lw=2.5))
-        ax.text(x_pl, beam_y + 0.75, f"P{i+1}\n{p_uls:.1f}/{p_sls:.1f}", ha="center", fontsize=9, color="darkblue",
-                fontweight="bold", bbox=dict(boxstyle="round,pad=0.2", facecolor="lightblue", alpha=0.9, edgecolor="blue"))
+        ax.text(x_pl, beam_y + 0.75, f"P{i+1}\n{p_uls:.1f}/{p_sls:.1f}", ha="center", fontsize=9,
+                color="darkblue", fontweight="bold",
+                bbox=dict(boxstyle="round,pad=0.2", facecolor="lightblue", alpha=0.9))
     cumulative = 0
     for i, span in enumerate(spans):
         mid = cumulative + span / 2
         ax.annotate("", xy=(cumulative + 0.05, beam_y - 0.60), xytext=(cumulative + span - 0.05, beam_y - 0.60),
                    arrowprops=dict(arrowstyle="<->", color="green", lw=1.5))
-        ax.text(mid, beam_y - 0.72, f"L{i+1} = {span:.2f} m", ha="center", fontsize=10, color="darkgreen", fontweight="bold")
+        ax.text(mid, beam_y - 0.72, f"L{i+1} = {span:.2f} m", ha="center", fontsize=10,
+                color="darkgreen", fontweight="bold")
         cumulative += span
     ax.set_xlim(-0.4, total_length + 0.4)
     ax.set_ylim(-0.95, 1.4)
     ax.set_aspect("equal")
     ax.axis("off")
-    ax.set_title("Loading Diagram", fontsize=12, fontweight="bold")
+    ax.set_title("Loading Diagram", fontweight="bold")
     plt.tight_layout()
     return fig
+
+# ============================================================================
+# STRUCTURAL CALCULATIONS
+# ============================================================================
 
 def calculate_single_span(span, udl, point_loads, E, I):
     n = 1001
@@ -310,50 +332,110 @@ def calculate_multi_span(spans, udl, point_loads, E, I):
         cumulative += span_len
     return x, M, V, defl, reactions
 
-def calculate_resistances(props, fy, gamma_m):
-    W_pos = props.get("W_pos", props.get("W", 20)) * 1e-6
-    W_neg = props.get("W_neg", W_pos * 0.9) * 1e-6
-    M_Rd_pos = W_pos * (fy * 1e6) / gamma_m / 1000
-    M_Rd_neg = W_neg * (fy * 1e6) / gamma_m / 1000
-    A_eff = props["A_eff"] * 1e-6
-    V_Rd = A_eff * (fy * 1e6) / (np.sqrt(3) * gamma_m) / 1000
-    return {"M_Rd_pos": M_Rd_pos, "M_Rd_neg": M_Rd_neg, "V_Rd": V_Rd}
+# ============================================================================
+# EN 1993-1-3 RESISTANCE CALCULATIONS
+# ============================================================================
 
-def check_web_crippling(F_Ed, props, fy, gamma_m, s_s=50, category=2):
+def calculate_resistances(props, fy, gamma_m):
+    """
+    EN 1993-1-3, 6.1.4 and 6.1.5
+    M_c,Rd = W_eff * f_yb / gamma_M0
+    V_Rd = A_eff * f_yb / (sqrt(3) * gamma_M0)
+    """
+    W_pos = props.get("W_pos", 20) * 1e-6  # cm3/m -> m3/m
+    W_neg = props.get("W_neg", W_pos * 1e6 * 0.9) * 1e-6
+    f_Pa = fy * 1e6  # MPa -> Pa
+    
+    M_Rd_pos = W_pos * f_Pa / gamma_m / 1000  # kNm/m
+    M_Rd_neg = W_neg * f_Pa / gamma_m / 1000
+    
+    A_eff = props["A_eff"] * 1e-6  # mm2/m -> m2/m
+    V_Rd = A_eff * f_Pa / (np.sqrt(3) * gamma_m) / 1000  # kN/m
+    
+    return {"M_Rd_pos": M_Rd_pos, "M_Rd_neg": M_Rd_neg, "V_Rd": V_Rd,
+            "W_pos": props.get("W_pos", 20), "W_neg": props.get("W_neg", 18)}
+
+def check_web_crippling(F_Ed, props, fy, gamma_m, s_s, category):
+    """
+    EN 1993-1-3, 6.1.7.3 - Web crippling for sheeting
+    R_w,Rd = alpha * t^2 * sqrt(f_yb * E) * k1 * k2 * k3 / gamma_M1
+    
+    where:
+    k1 = (1 - 0.1 * sqrt(r/t))
+    k2 = (0.5 + sqrt(0.02 * l_a / t))
+    k3 = (2.4 + (phi/90)^2)
+    
+    Category 1: End support (c <= 1.5*h_w), alpha=0.075, l_a=10mm
+    Category 2: Internal support, alpha=0.15, l_a=s_s
+    """
     t = props["t"]
     r = props["r"]
     phi = props["phi"]
     E = props["E"]
     num_webs = props.get("num_webs", 2)
+    
     if category == 1:
         alpha = 0.075
-        l_a = 10
+        l_a = 10.0
     else:
         alpha = 0.15
         l_a = s_s
-    factor1 = 1 - 0.1 * np.sqrt(r / t)
-    factor2 = 0.5 + np.sqrt(0.02 * l_a / t)
-    factor3 = 2.4 + (phi / 90)**2
-    R_w_Rd_single_N = alpha * t**2 * np.sqrt(fy * E) * factor1 * factor2 * factor3 / gamma_m
-    R_w_Rd = R_w_Rd_single_N * num_webs / 1000
+    
+    k1 = 1 - 0.1 * np.sqrt(r / t)
+    k2 = 0.5 + np.sqrt(0.02 * l_a / t)
+    k3 = 2.4 + (phi / 90)**2
+    sqrt_fy_E = np.sqrt(fy * E)
+    
+    R_w_Rd_single = alpha * t**2 * sqrt_fy_E * k1 * k2 * k3 / gamma_m  # N per web
+    R_w_Rd = R_w_Rd_single * num_webs / 1000  # kN total
+    
     utilization = F_Ed / R_w_Rd if R_w_Rd > 0 else float("inf")
-    return {"R_w_Rd": R_w_Rd, "R_w_Rd_single": R_w_Rd_single_N / 1000, "utilization": utilization,
-            "status": "OK" if utilization <= 1.0 else "NOT OK", "alpha": alpha, "category": category}
+    
+    return {
+        "R_w_Rd": R_w_Rd,
+        "R_w_Rd_single": R_w_Rd_single / 1000,
+        "utilization": utilization,
+        "status": "OK" if utilization <= 1.0 else "NOT OK",
+        "alpha": alpha,
+        "l_a": l_a,
+        "k1": k1,
+        "k2": k2,
+        "k3": k3,
+        "sqrt_fy_E": sqrt_fy_E,
+        "t": t,
+        "r": r,
+        "phi": phi,
+        "num_webs": num_webs,
+        "category": category
+    }
 
 def check_combined_bending_shear(M_Ed, V_Ed, M_Rd, V_Rd):
+    """EN 1993-1-3, 6.1.10"""
     if V_Ed <= 0.5 * V_Rd:
         M_Rd_reduced = M_Rd
+        rho = 0
     else:
         rho = (2 * V_Ed / V_Rd - 1)**2
         M_Rd_reduced = M_Rd * (1 - rho)
     utilization = M_Ed / M_Rd_reduced if M_Rd_reduced > 0 else float("inf")
-    return {"M_Rd_reduced": M_Rd_reduced, "utilization": utilization, "status": "OK" if utilization <= 1.0 else "NOT OK"}
+    return {"M_Rd_reduced": M_Rd_reduced, "utilization": utilization, 
+            "status": "OK" if utilization <= 1.0 else "NOT OK", "rho": rho}
 
 def check_combined_bending_web_crippling(M_Ed, F_Ed, M_Rd, R_w_Rd):
+    """EN 1993-1-3, 6.1.11"""
     if M_Rd <= 0 or R_w_Rd <= 0:
-        return {"interaction": float("inf"), "status": "NOT OK"}
-    interaction = M_Ed / M_Rd + F_Ed / R_w_Rd
-    return {"interaction": interaction, "utilization": interaction / 1.25, "status": "OK" if interaction <= 1.25 else "NOT OK"}
+        return {"interaction": float("inf"), "status": "NOT OK", 
+                "M_ratio": 0, "F_ratio": 0}
+    M_ratio = M_Ed / M_Rd
+    F_ratio = F_Ed / R_w_Rd
+    interaction = M_ratio + F_ratio
+    return {"interaction": interaction, "utilization": interaction / 1.25, 
+            "status": "OK" if interaction <= 1.25 else "NOT OK",
+            "M_ratio": M_ratio, "F_ratio": F_ratio}
+
+# ============================================================================
+# PLOTTING
+# ============================================================================
 
 def plot_internal_forces(x, M, V, spans, point_loads):
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 7), sharex=True)
@@ -361,8 +443,8 @@ def plot_internal_forces(x, M, V, spans, point_loads):
     ax1.fill_between(x, 0, V, where=(V < 0), alpha=0.3, color="red")
     ax1.plot(x, V, "k-", linewidth=1.5)
     ax1.axhline(y=0, color="black", linewidth=0.8)
-    ax1.set_ylabel("Shear V [kN/m]", fontsize=11)
-    ax1.set_title("Shear Force Diagram (ULS)", fontsize=12, fontweight="bold")
+    ax1.set_ylabel("Shear V [kN/m]")
+    ax1.set_title("Shear Force Diagram (ULS)", fontweight="bold")
     ax1.grid(True, alpha=0.3)
     cumulative = 0
     for span in spans:
@@ -374,9 +456,9 @@ def plot_internal_forces(x, M, V, spans, point_loads):
     ax2.plot(x, M, "k-", linewidth=1.5)
     ax2.axhline(y=0, color="black", linewidth=0.8)
     ax2.invert_yaxis()
-    ax2.set_ylabel("Moment M [kNm/m]", fontsize=11)
-    ax2.set_xlabel("Position x [m]", fontsize=11)
-    ax2.set_title("Bending Moment Diagram (ULS) - Positive (sagging) DOWN", fontsize=12, fontweight="bold")
+    ax2.set_ylabel("Moment M [kNm/m]")
+    ax2.set_xlabel("Position x [m]")
+    ax2.set_title("Bending Moment Diagram (ULS) - Positive DOWN", fontweight="bold")
     ax2.grid(True, alpha=0.3)
     ax2.legend(loc="lower right")
     cumulative = 0
@@ -392,7 +474,8 @@ def plot_deflection(x, defl, spans, defl_limit, point_loads):
     ax.fill_between(x, 0, defl, alpha=0.3, color="orange")
     ax.plot(x, defl, "b-", linewidth=2, label="Deflection")
     ax.axhline(y=0, color="black", linewidth=1)
-    ax.axhline(y=defl_limit, color="red", linestyle="--", linewidth=2, label=f"Limit L/200 = {defl_limit:.1f} mm")
+    ax.axhline(y=defl_limit, color="red", linestyle="--", linewidth=2, 
+               label=f"Limit L/200 = {defl_limit:.1f} mm")
     cumulative = 0
     for span in spans:
         ax.axvline(x=cumulative, color="gray", linestyle="--", alpha=0.5)
@@ -404,27 +487,38 @@ def plot_deflection(x, defl, spans, defl_limit, point_loads):
     d_max = defl[idx_max]
     ax.plot(x[idx_max], d_max, "ro", markersize=10, zorder=5)
     ax.annotate(f"d_max = {d_max:.2f} mm\nx = {x[idx_max]:.2f} m", xy=(x[idx_max], d_max),
-                xytext=(x[idx_max] + sum(spans)*0.05, d_max + defl_limit*0.15), fontsize=11, color="red", fontweight="bold",
+                xytext=(x[idx_max] + sum(spans)*0.05, d_max + defl_limit*0.15),
+                fontsize=11, color="red", fontweight="bold",
                 arrowprops=dict(arrowstyle="->", color="red", lw=1.5),
                 bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.9, edgecolor="red"))
     ax.invert_yaxis()
-    ax.set_xlabel("Position x [m]", fontsize=11)
-    ax.set_ylabel("Deflection d [mm] (down)", fontsize=11)
-    ax.set_title("Deflection Diagram (SLS) - Positive deflection DOWN", fontsize=12, fontweight="bold")
+    ax.set_xlabel("Position x [m]")
+    ax.set_ylabel("Deflection d [mm] (down)")
+    ax.set_title("Deflection Diagram (SLS) - Positive DOWN", fontweight="bold")
     ax.legend(loc="lower right")
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
     return fig
 
+# ============================================================================
+# MAIN APP
+# ============================================================================
+
 def main():
-    st.set_page_config(page_title="Steel Sheet Calculator v3.2", page_icon="S", layout="wide")
-    st.title("Steel Sheet Calculator v3.2")
-    st.markdown("**EN 1993-1-3 | Full Ruukki Catalog**")
+    st.set_page_config(page_title="Steel Sheet Calculator v3.3", page_icon="S", layout="wide")
+    st.title("Steel Sheet Calculator v3.3")
+    st.markdown("**EN 1993-1-3 | Full Ruukki Catalog | Detailed Calculation Output**")
+    
     if "copied_profile" not in st.session_state:
         st.session_state.copied_profile = None
+    
+    # === SIDEBAR ===
     st.sidebar.header("Input Parameters")
+    
+    # 1. Profile Selection
     st.sidebar.subheader("1. Profile Selection")
-    profile_mode = st.sidebar.radio("Mode", ["From Catalog", "Copy & Modify", "Full Manual"], horizontal=False)
+    profile_mode = st.sidebar.radio("Mode", ["From Catalog", "Copy & Modify", "Full Manual"])
+    
     if profile_mode == "From Catalog":
         profile_types = get_profile_types()
         selected_type = st.sidebar.selectbox("Profile Type", profile_types)
@@ -435,30 +529,34 @@ def main():
         if not props:
             st.sidebar.error(f"Profile {profile_name} not found!")
             return
-        if st.sidebar.button("Copy this profile"):
+        if st.sidebar.button("Copy for modification"):
             st.session_state.copied_profile = copy.deepcopy(props)
             st.session_state.copied_profile["source_name"] = profile_name
-            st.sidebar.success(f"Copied {profile_name}!")
+            st.sidebar.success(f"Copied!")
+            
     elif profile_mode == "Copy & Modify":
         if st.session_state.copied_profile is None:
-            st.sidebar.warning("No profile copied yet!")
+            st.sidebar.warning("No profile copied! Select from Catalog first.")
             profile_types = get_profile_types()
-            selected_type = st.sidebar.selectbox("Select profile to copy", profile_types)
+            selected_type = st.sidebar.selectbox("Select profile", profile_types)
             available_t = get_thicknesses_for_type(selected_type)
             selected_t = st.sidebar.selectbox("Thickness", available_t, format_func=lambda x: f"{x} mm")
             profile_name = f"{selected_type}-{selected_t}"
             base_props = get_profile_database().get(profile_name, {})
-            if st.sidebar.button("Copy profile"):
+            if st.sidebar.button("Copy"):
                 st.session_state.copied_profile = copy.deepcopy(base_props)
                 st.session_state.copied_profile["source_name"] = profile_name
                 st.rerun()
             props = base_props
         else:
-            st.sidebar.success(f"Base: {st.session_state.copied_profile.get('source_name', 'Custom')}")
             base = st.session_state.copied_profile
-            st.sidebar.markdown("**Modify parameters:**")
+            st.sidebar.success(f"Base: {base.get('source_name', 'Custom')}")
+            st.sidebar.markdown("**Modify:**")
+            
             new_t = st.sidebar.number_input("Thickness t [mm]", 0.4, 2.0, float(base["t"]), 0.05)
             t_ratio = new_t / base["t"]
+            
+            # Scale properties approximately
             props = copy.deepcopy(base)
             props["t"] = new_t
             props["I_pos"] = base["I_pos"] * t_ratio
@@ -466,34 +564,52 @@ def main():
             props["W_pos"] = base["W_pos"] * t_ratio
             props["W_neg"] = base["W_neg"] * t_ratio
             props["A_eff"] = base["A_eff"] * t_ratio
-            with st.sidebar.expander("Fine-tune properties"):
+            
+            with st.sidebar.expander("Fine-tune scaled properties"):
                 props["I_pos"] = st.number_input("I_pos [cm4/m]", 1.0, 2000.0, float(props["I_pos"]), 1.0)
                 props["I_neg"] = st.number_input("I_neg [cm4/m]", 1.0, 2000.0, float(props["I_neg"]), 1.0)
                 props["W_pos"] = st.number_input("W_pos [cm3/m]", 1.0, 500.0, float(props["W_pos"]), 0.5)
                 props["W_neg"] = st.number_input("W_neg [cm3/m]", 1.0, 500.0, float(props["W_neg"]), 0.5)
                 props["A_eff"] = st.number_input("A_eff [mm2/m]", 100.0, 5000.0, float(props["A_eff"]), 10.0)
+            
             profile_name = f"{base.get('type', 'Custom')}-{new_t} (modified)"
-            if st.sidebar.button("Clear copied profile"):
+            
+            if st.sidebar.button("Clear"):
                 st.session_state.copied_profile = None
                 st.rerun()
     else:
-        st.sidebar.markdown("**Enter all properties manually:**")
+        st.sidebar.markdown("**Manual input:**")
         c1, c2 = st.sidebar.columns(2)
-        props = {"h": c1.number_input("h [mm]", 20.0, 250.0, 70.0), "t": c2.number_input("t [mm]", 0.4, 2.0, 0.9),
-            "I_pos": c1.number_input("I_pos [cm4/m]", 10.0, 1500.0, 100.0), "I_neg": c2.number_input("I_neg [cm4/m]", 10.0, 1500.0, 90.0),
-            "W_pos": c1.number_input("W_pos [cm3/m]", 5.0, 200.0, 30.0), "W_neg": c2.number_input("W_neg [cm3/m]", 5.0, 200.0, 27.0),
-            "A_eff": c1.number_input("A_eff [mm2/m]", 500.0, 4000.0, 1200.0), "E": 210000,
-            "h_w": c2.number_input("h_w [mm]", 15.0, 240.0, 63.0), "phi": c1.number_input("phi [deg]", 50.0, 90.0, 70.0),
-            "r": c2.number_input("r [mm]", 1.0, 15.0, 4.0), "num_webs": int(c1.number_input("Webs", 2, 10, 5)),
-            "pitch": c2.number_input("Pitch [mm]", 100.0, 350.0, 200.0), "b_top": 55, "b_bottom": 50}
+        props = {
+            "h": c1.number_input("h [mm]", 20.0, 250.0, 70.0),
+            "t": c2.number_input("t [mm]", 0.4, 2.0, 0.9),
+            "I_pos": c1.number_input("I_pos [cm4/m]", 10.0, 1500.0, 100.0),
+            "I_neg": c2.number_input("I_neg [cm4/m]", 10.0, 1500.0, 90.0),
+            "W_pos": c1.number_input("W_pos [cm3/m]", 5.0, 200.0, 30.0),
+            "W_neg": c2.number_input("W_neg [cm3/m]", 5.0, 200.0, 27.0),
+            "A_eff": c1.number_input("A_eff [mm2/m]", 500.0, 4000.0, 1200.0),
+            "E": 210000,
+            "h_w": c2.number_input("h_w [mm]", 15.0, 240.0, 63.0),
+            "phi": c1.number_input("phi [deg]", 50.0, 90.0, 70.0),
+            "r": c2.number_input("r [mm]", 1.0, 15.0, 4.0),
+            "num_webs": int(c1.number_input("Webs", 2, 10, 5)),
+            "pitch": c2.number_input("Pitch [mm]", 100.0, 350.0, 200.0),
+            "b_top": 55, "b_bottom": 50
+        }
         profile_name = "Manual"
+    
+    # 2. Geometry
     st.sidebar.subheader("2. Geometry")
-    num_spans = st.sidebar.number_input("Spans", 1, 5, 1)
+    num_spans = st.sidebar.number_input("Number of spans", 1, 5, 1)
     spans = [st.sidebar.number_input(f"L{i+1} [m]", 0.5, 20.0, 6.0, key=f"L{i}") for i in range(int(num_spans))]
     total_length = sum(spans)
+    
+    # 3. Material
     st.sidebar.subheader("3. Material")
     steel_grade = st.sidebar.selectbox("Steel Grade", ["S350GD", "S320GD", "S280GD", "S250GD", "S420GD"])
     fy = {"S350GD": 350, "S320GD": 320, "S280GD": 280, "S250GD": 250, "S420GD": 420}[steel_grade]
+    
+    # 4. Loads
     st.sidebar.subheader("4. Loads")
     c1, c2 = st.sidebar.columns(2)
     g_k = c1.number_input("G_k [kN/m2]", 0.0, 10.0, 0.3)
@@ -505,43 +621,76 @@ def main():
     udl_uls = gamma_g * g_k + gamma_q * q_k
     udl_sls = g_k + q_k
     st.sidebar.info(f"q_ULS = {udl_uls:.2f} | q_SLS = {udl_sls:.2f} kN/m2")
+    
+    # 5. Point Loads
     st.sidebar.subheader("5. Point Loads")
-    num_pl = st.sidebar.number_input("Count", 0, 10, 0)
+    num_pl = st.sidebar.number_input("Number of point loads", 0, 10, 0)
     point_loads = []
     for i in range(int(num_pl)):
         c1, c2 = st.sidebar.columns(2)
-        p_g = c1.number_input(f"P{i+1}_G", 0.0, 50.0, 0.0, key=f"Pg{i}")
-        p_q = c2.number_input(f"P{i+1}_Q", 0.0, 50.0, 2.0, key=f"Pq{i}")
+        p_g = c1.number_input(f"P{i+1}_G [kN]", 0.0, 50.0, 0.0, key=f"Pg{i}")
+        p_q = c2.number_input(f"P{i+1}_Q [kN]", 0.0, 50.0, 2.0, key=f"Pq{i}")
         pos = st.sidebar.number_input(f"x{i+1} [m]", 0.0, total_length, min(3.0, total_length/2), key=f"x{i}")
         p_uls = gamma_g * p_g + gamma_q * p_q
         p_sls = p_g + p_q
         point_loads.append({"magnitude": p_uls, "magnitude_uls": p_uls, "magnitude_sls": p_sls, "position": pos})
-    st.sidebar.subheader("6. Local Effects")
-    s_s = st.sidebar.number_input("s_s [mm]", 10.0, 200.0, 50.0)
-    wc_category = st.sidebar.radio("Support type", [1, 2], index=1, format_func=lambda x: "End (Cat.1)" if x==1 else "Internal (Cat.2)")
+    
+    # 6. Local Effects
+    st.sidebar.subheader("6. Local Effects (6.1.7.3)")
+    s_s = st.sidebar.number_input("Bearing length s_s [mm]", 10.0, 200.0, 50.0)
+    
+    st.sidebar.markdown("**Support Category:**")
+    st.sidebar.markdown("""
+    **Category 1 (End):** Support at or near free end of sheet (c <= 1.5*h_w). 
+    Uses alpha=0.075, l_a=10mm.
+    
+    **Category 2 (Internal):** Internal support or far from free end (c > 1.5*h_w).
+    Uses alpha=0.15, l_a=s_s.
+    """)
+    wc_category = st.sidebar.radio("Category", [1, 2], index=1,
+        format_func=lambda x: f"Cat.{x}: {'End (alpha=0.075)' if x==1 else 'Internal (alpha=0.15)'}")
+    
     calc_btn = st.sidebar.button("CALCULATE", type="primary", use_container_width=True)
+    
+    # === MAIN CONTENT ===
     col1, col2 = st.columns([1, 2])
+    
     with col1:
         st.subheader("Profile")
         fig_profile = draw_profile_cross_section(props, profile_name)
         st.pyplot(fig_profile)
         plt.close()
-        with st.expander("Properties", expanded=True):
-            st.write(f"**Type:** {props.get('type', 'Custom')}")
-            st.write(f"**h** = {props['h']} mm | **t** = {props['t']} mm")
-            st.write(f"**I_pos** = {props.get('I_pos', 0):.1f} cm4/m")
-            st.write(f"**W_pos** = {props.get('W_pos', 0):.1f} cm3/m")
-            st.write(f"**A_eff** = {props.get('A_eff', 0):.0f} mm2/m")
-            st.write(f"**Webs** = {props.get('num_webs', 2)}")
+        
+        with st.expander("Section Properties", expanded=True):
+            st.markdown(f"""
+            | Property | Value | Unit |
+            |----------|-------|------|
+            | Type | {props.get('type', 'Custom')} | - |
+            | h | {props['h']} | mm |
+            | t | {props['t']} | mm |
+            | I_pos | {props.get('I_pos', 0):.1f} | cm4/m |
+            | I_neg | {props.get('I_neg', 0):.1f} | cm4/m |
+            | W_pos | {props.get('W_pos', 0):.1f} | cm3/m |
+            | W_neg | {props.get('W_neg', 0):.1f} | cm3/m |
+            | A_eff | {props.get('A_eff', 0):.0f} | mm2/m |
+            | phi | {props.get('phi', 70)} | deg |
+            | r | {props.get('r', 4)} | mm |
+            | Webs | {props.get('num_webs', 2)} | - |
+            """)
+    
     with col2:
         st.subheader("Loading")
         fig_beam = draw_beam_diagram(spans, udl_uls, udl_sls, point_loads)
         st.pyplot(fig_beam)
         plt.close()
+    
     if calc_btn:
         st.markdown("---")
-        st.header("Results")
-        I_calc = props.get("I_pos", props.get("I", 50))
+        st.header("Calculation Results")
+        
+        I_calc = props.get("I_pos", 50)
+        
+        # Calculate internal forces
         if num_spans == 1:
             x_uls, M_uls, V_uls, _ = calculate_single_span(spans[0], udl_uls, point_loads, props["E"], I_calc)
             pl_sls = [{"magnitude": pl["magnitude_sls"], "position": pl["position"]} for pl in point_loads]
@@ -551,69 +700,182 @@ def main():
             x_uls, M_uls, V_uls, _, reactions = calculate_multi_span(spans, udl_uls, point_loads, props["E"], I_calc)
             pl_sls = [{"magnitude": pl["magnitude_sls"], "position": pl["position"]} for pl in point_loads]
             x_sls, _, _, defl_sls, _ = calculate_multi_span(spans, udl_sls, pl_sls, props["E"], I_calc)
+        
+        # Calculate resistances
         res = calculate_resistances(props, fy, gamma_m)
         M_Rd_pos = res["M_Rd_pos"]
         M_Rd_neg = res["M_Rd_neg"]
         V_Rd = res["V_Rd"]
+        
         M_Ed_pos = np.max(M_uls)
         M_Ed_neg = abs(np.min(M_uls)) if np.min(M_uls) < 0 else 0
         V_Ed = np.max(np.abs(V_uls))
         defl_max = np.max(np.abs(defl_sls))
         defl_limit = max(spans) * 1000 / 200
+        
         col1, col2 = st.columns([2, 1])
+        
         with col1:
-            st.subheader("EN 1993-1-3 Checks")
+            st.subheader("EN 1993-1-3 Verification")
+            
+            # Summary table
             checks = []
             util_m_pos = M_Ed_pos / M_Rd_pos if M_Rd_pos > 0 else 0
-            checks.append(["6.1.4", "Bending (sagging)", f"{M_Ed_pos:.2f}/{M_Rd_pos:.2f}", f"{util_m_pos*100:.1f}%", "OK" if util_m_pos <= 1 else "NOT OK"])
+            checks.append(["6.1.4", "Bending (sagging)", f"{M_Ed_pos:.2f}/{M_Rd_pos:.2f}", 
+                          f"{util_m_pos*100:.1f}%", "OK" if util_m_pos <= 1 else "NOT OK"])
+            
             if num_spans > 1 and M_Ed_neg > 0:
                 util_m_neg = M_Ed_neg / M_Rd_neg if M_Rd_neg > 0 else 0
-                checks.append(["6.1.4", "Bending (hogging)", f"{M_Ed_neg:.2f}/{M_Rd_neg:.2f}", f"{util_m_neg*100:.1f}%", "OK" if util_m_neg <= 1 else "NOT OK"])
+                checks.append(["6.1.4", "Bending (hogging)", f"{M_Ed_neg:.2f}/{M_Rd_neg:.2f}",
+                              f"{util_m_neg*100:.1f}%", "OK" if util_m_neg <= 1 else "NOT OK"])
+            
             util_v = V_Ed / V_Rd if V_Rd > 0 else 0
-            checks.append(["6.1.5", "Shear", f"{V_Ed:.2f}/{V_Rd:.2f}", f"{util_v*100:.1f}%", "OK" if util_v <= 1 else "NOT OK"])
+            checks.append(["6.1.5", "Shear", f"{V_Ed:.2f}/{V_Rd:.2f}",
+                          f"{util_v*100:.1f}%", "OK" if util_v <= 1 else "NOT OK"])
+            
             comb_mv = check_combined_bending_shear(M_Ed_pos, V_Ed, M_Rd_pos, V_Rd)
-            checks.append(["6.1.10", "M+V Combined", f"M_Rd,red={comb_mv['M_Rd_reduced']:.2f}", f"{comb_mv['utilization']*100:.1f}%", comb_mv["status"]])
+            checks.append(["6.1.10", "M+V Combined", f"M_Rd,red={comb_mv['M_Rd_reduced']:.2f}",
+                          f"{comb_mv['utilization']*100:.1f}%", comb_mv["status"]])
+            
             util_defl = defl_max / defl_limit if defl_limit > 0 else 0
-            checks.append(["7.3", "Deflection (SLS)", f"{defl_max:.2f}/{defl_limit:.1f} mm", f"{util_defl*100:.1f}%", "OK" if util_defl <= 1 else "NOT OK"])
+            checks.append(["7.3", "Deflection (SLS)", f"{defl_max:.2f}/{defl_limit:.1f} mm",
+                          f"{util_defl*100:.1f}%", "OK" if util_defl <= 1 else "NOT OK"])
+            
             df = pd.DataFrame(checks, columns=["Clause", "Check", "Ed/Rd", "Util.", "Status"])
+            
             def color_status(val):
-                if val == "OK": return "background-color: #90EE90"
-                elif "NOT OK" in str(val): return "background-color: #FFB6C1"
+                if val == "OK":
+                    return "background-color: #90EE90"
+                elif "NOT OK" in str(val):
+                    return "background-color: #FFB6C1"
                 return ""
+            
             st.dataframe(df.style.applymap(color_status, subset=["Status"]), hide_index=True, use_container_width=True)
+            
+            # Detailed resistance calculations
+            with st.expander("Detailed Resistance Calculation (6.1.4, 6.1.5)"):
+                st.markdown(f"""
+                **Bending Resistance (EN 1993-1-3, 6.1.4):**
+                
+                M_c,Rd = W_eff * f_yb / gamma_M0
+                
+                - W_eff,pos = {res['W_pos']:.1f} cm3/m = {res['W_pos']*1e-6:.2e} m3/m
+                - f_yb = {fy} MPa = {fy*1e6:.0f} N/m2
+                - gamma_M0 = {gamma_m}
+                
+                M_c,Rd,pos = {res['W_pos']*1e-6:.2e} * {fy*1e6:.0f} / {gamma_m} = {M_Rd_pos*1000:.0f} Nm/m = **{M_Rd_pos:.2f} kNm/m**
+                
+                ---
+                
+                **Shear Resistance (EN 1993-1-3, 6.1.5):**
+                
+                V_Rd = A_eff * f_yb / (sqrt(3) * gamma_M0)
+                
+                - A_eff = {props['A_eff']:.0f} mm2/m = {props['A_eff']*1e-6:.2e} m2/m
+                
+                V_Rd = {props['A_eff']*1e-6:.2e} * {fy*1e6:.0f} / ({np.sqrt(3):.4f} * {gamma_m}) = **{V_Rd:.2f} kN/m**
+                """)
+            
+            # Local effects detailed
             if point_loads:
-                st.subheader("Local Effects (6.1.7.3, 6.1.11)")
+                st.subheader("Local Effects - Web Crippling (6.1.7.3)")
+                
                 for i, pl in enumerate(point_loads):
-                    wc = check_web_crippling(pl["magnitude_uls"], props, fy, gamma_m, s_s, category=wc_category)
+                    wc = check_web_crippling(pl["magnitude_uls"], props, fy, gamma_m, s_s, wc_category)
                     comb = check_combined_bending_web_crippling(M_Ed_pos, pl["magnitude_uls"], M_Rd_pos, wc["R_w_Rd"])
-                    status_icon = "OK" if wc["status"]=="OK" and comb["status"]=="OK" else "NOT OK"
-                    st.write(f"**P{i+1}** = {pl['magnitude_uls']:.1f} kN @ Cat.{wc['category']}: R_w,Rd = {wc['R_w_Rd']:.2f} kN ({wc['R_w_Rd_single']:.2f} kN/web), Util = {wc['utilization']*100:.1f}%, M+F = {comb['interaction']:.2f}/1.25 -> {status_icon}")
+                    
+                    status_color = "green" if wc["status"]=="OK" and comb["status"]=="OK" else "red"
+                    
+                    st.markdown(f"### Point Load P{i+1} = {pl['magnitude_uls']:.2f} kN")
+                    
+                    st.markdown(f"""
+                    **Web Crippling Resistance (EN 1993-1-3, 6.1.7.3, Formula 6.18):**
+                    
+                    Category {wc['category']}: {'End support (c <= 1.5*h_w)' if wc['category']==1 else 'Internal support'}
+                    
+                    R_w,Rd = alpha * t^2 * sqrt(f_yb * E) * k1 * k2 * k3 / gamma_M1
+                    
+                    **Input parameters:**
+                    | Parameter | Value | Description |
+                    |-----------|-------|-------------|
+                    | t | {wc['t']} mm | Sheet thickness |
+                    | r | {wc['r']} mm | Corner radius |
+                    | phi | {wc['phi']} deg | Web angle |
+                    | f_yb | {fy} MPa | Yield strength |
+                    | E | {props['E']} MPa | Elastic modulus |
+                    | alpha | {wc['alpha']} | Category coefficient |
+                    | l_a | {wc['l_a']} mm | Effective bearing length |
+                    | n_webs | {wc['num_webs']} | Number of webs |
+                    | gamma_M1 | {gamma_m} | Partial factor |
+                    
+                    **Intermediate calculations:**
+                    - k1 = 1 - 0.1 * sqrt(r/t) = 1 - 0.1 * sqrt({wc['r']}/{wc['t']}) = **{wc['k1']:.4f}**
+                    - k2 = 0.5 + sqrt(0.02 * l_a / t) = 0.5 + sqrt(0.02 * {wc['l_a']} / {wc['t']}) = **{wc['k2']:.4f}**
+                    - k3 = 2.4 + (phi/90)^2 = 2.4 + ({wc['phi']}/90)^2 = **{wc['k3']:.4f}**
+                    - sqrt(f_yb * E) = sqrt({fy} * {props['E']}) = **{wc['sqrt_fy_E']:.2f}**
+                    
+                    **Resistance per web:**
+                    R_w,Rd,single = {wc['alpha']} * {wc['t']}^2 * {wc['sqrt_fy_E']:.2f} * {wc['k1']:.4f} * {wc['k2']:.4f} * {wc['k3']:.4f} / {gamma_m}
+                    R_w,Rd,single = **{wc['R_w_Rd_single']*1000:.1f} N = {wc['R_w_Rd_single']:.3f} kN**
+                    
+                    **Total resistance ({wc['num_webs']} webs):**
+                    R_w,Rd = {wc['R_w_Rd_single']:.3f} * {wc['num_webs']} = **{wc['R_w_Rd']:.2f} kN**
+                    
+                    **Utilization:**
+                    F_Ed / R_w,Rd = {pl['magnitude_uls']:.2f} / {wc['R_w_Rd']:.2f} = **{wc['utilization']*100:.1f}%** --> **{wc['status']}**
+                    
+                    ---
+                    
+                    **Combined Bending + Web Crippling (EN 1993-1-3, 6.1.11):**
+                    
+                    M_Ed/M_c,Rd + F_Ed/R_w,Rd <= 1.25
+                    
+                    - M_Ed/M_c,Rd = {M_Ed_pos:.2f} / {M_Rd_pos:.2f} = {comb['M_ratio']:.4f}
+                    - F_Ed/R_w,Rd = {pl['magnitude_uls']:.2f} / {wc['R_w_Rd']:.2f} = {comb['F_ratio']:.4f}
+                    - Interaction = {comb['M_ratio']:.4f} + {comb['F_ratio']:.4f} = **{comb['interaction']:.4f}**
+                    - Limit = 1.25
+                    - Utilization = {comb['interaction']:.4f} / 1.25 = **{comb['utilization']*100:.1f}%** --> **{comb['status']}**
+                    """)
+                    
+                    st.markdown(f"**Result: :{status_color}[{wc['status']}]**")
+                    st.markdown("---")
+            
             if reactions:
-                st.subheader("Reactions (ULS)")
+                st.subheader("Support Reactions (ULS)")
                 cols = st.columns(len(reactions))
                 for i, (col, R) in enumerate(zip(cols, reactions)):
                     col.metric(f"R{i+1}", f"{R:.2f} kN/m")
+        
         with col2:
             st.subheader("Summary")
             all_ok = util_m_pos <= 1 and util_v <= 1 and util_defl <= 1 and comb_mv["utilization"] <= 1
+            
             if all_ok:
                 st.success("ALL CHECKS PASSED")
             else:
                 st.error("SOME CHECKS FAILED")
+            
             st.metric("M_Ed,max", f"{max(M_Ed_pos, M_Ed_neg):.2f} kNm/m")
             st.metric("V_Ed,max", f"{V_Ed:.2f} kN/m")
             st.metric("d_max", f"{defl_max:.2f} mm")
+            st.metric("M_Rd,pos", f"{M_Rd_pos:.2f} kNm/m")
+            st.metric("V_Rd", f"{V_Rd:.2f} kN/m")
+        
         st.markdown("---")
         st.subheader("Diagrams")
-        tab1, tab2 = st.tabs(["Forces (ULS)", "Deflection (SLS)"])
+        
+        tab1, tab2 = st.tabs(["Internal Forces (ULS)", "Deflection (SLS)"])
+        
         with tab1:
             fig = plot_internal_forces(x_uls, M_uls, V_uls, spans, point_loads)
             st.pyplot(fig)
             plt.close()
+        
         with tab2:
             fig = plot_deflection(x_sls, defl_sls, spans, defl_limit, point_loads)
             st.pyplot(fig)
             plt.close()
+    
     else:
         st.info("Configure parameters and click CALCULATE")
 
