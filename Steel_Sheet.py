@@ -527,7 +527,7 @@ def plot_deflection(x, defl, spans, defl_limit):
 def main():
     st.set_page_config(page_title="Steel Sheet v3.4", page_icon="S", layout="wide")
     st.title("Steel Sheet Calculator v3.4")
-    st.markdown("**EN 1993-1-3 | Full Poimu-compatible checks**")
+    st.markdown("**EN 1993-1-3 | Profiled Steel Sheet Design & Verification**")
     
     if "copied_profile" not in st.session_state:
         st.session_state.copied_profile = None
